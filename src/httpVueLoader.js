@@ -248,30 +248,34 @@
 
 			return httpVueLoader.httpRequest(componentURL)
 			.then(function(responseText) {
-
-				this.baseURI = componentURL.substr(0, componentURL.lastIndexOf('/')+1);
-				var doc = document.implementation.createHTMLDocument('');
-
-				// IE requires the <base> to come with <style>
-				doc.body.innerHTML = (this.baseURI ? '<base href="'+this.baseURI+'">' : '') + responseText;
-
-				for ( var it = doc.body.firstChild; it; it = it.nextSibling ) {
-
-					switch ( it.nodeName ) {
-						case 'TEMPLATE':
-							this.template = new TemplateContext(this, it);
-							break;
-						case 'SCRIPT':
-							this.script = new ScriptContext(this, it);
-							break;
-						case 'STYLE':
-							this.styles.push(new StyleContext(this, it));
-							break;
-					}
-				}
-
+				this.parse(responseText, componentURL.substr(0, componentURL.lastIndexOf('/')+1));
 				return this;
 			}.bind(this));
+		},
+
+		parse: function(componentText, baseURI) {
+			this.baseURI = baseURI;
+			var doc = document.implementation.createHTMLDocument('');
+
+			// IE requires the <base> to come with <style>
+			doc.body.innerHTML = (this.baseURI ? '<base href="'+this.baseURI+'">' : '') + componentText;
+
+			for ( var it = doc.body.firstChild; it; it = it.nextSibling ) {
+
+				switch ( it.nodeName ) {
+					case 'TEMPLATE':
+						this.template = new TemplateContext(this, it);
+						break;
+					case 'SCRIPT':
+						this.script = new ScriptContext(this, it);
+						break;
+					case 'STYLE':
+						this.styles.push(new StyleContext(this, it));
+						break;
+				}
+			}
+
+			return Promise.resolve(this);
 		},
 
 		_normalizeSection: function(eltCx) {
@@ -399,6 +403,28 @@
 		};
 	};
 
+  // NOTE: baseURI = componentURL.substr(0, componentURL.lastIndexOf('/')+1)
+	httpVueLoader.parse = function(componentText, baseURI, name) {
+		return function() {
+			return new Component(name).parse(componentText, baseURI)
+			.then(function(component) { return component.normalize(); })
+			.then(function(component) { return component.compile(); })
+			.then(function(component) {
+				var exports = component.script !== null ? component.script.module.exports : {};
+
+				if ( component.template !== null )
+					exports.template = component.template.getContent();
+
+				if ( exports.name === undefined )
+					if ( component.name !== undefined )
+						exports.name = component.name;
+
+				exports._baseURI = component.baseURI;
+
+				return exports;
+			});
+		};
+	};
 
 	httpVueLoader.register = function(Vue, url) {
 
